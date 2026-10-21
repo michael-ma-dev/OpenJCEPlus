@@ -186,6 +186,8 @@ abstract public class JMHBase {
                 myProvider = new OpenJCEPlus();
                 if (provider.endsWith("-OpenSSL")) {
                     myProvider = ((OpenJCEPlus) myProvider).configure("./src/test/OpenSSLOnly.config");
+                } else if (provider.endsWith("-OpenSSL-FFM")) {
+                    myProvider = ((OpenJCEPlus) myProvider).configure("./src/test/OpenSSLFFMOnly.config");
                 } else if (provider.endsWith("-OCK")) {
                     myProvider = ((OpenJCEPlus) myProvider).configure("./src/test/OCKOnly.config");
                 } else if (!provider.equals("OpenJCEPlus")) {

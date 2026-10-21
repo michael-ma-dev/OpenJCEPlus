@@ -1,0 +1,1102 @@
+/*
+ * Copyright IBM Corp. 2026
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms provided by IBM in the LICENSE file that accompanied
+ * this code, including the "Classpath" Exception described therein.
+ */
+
+package com.ibm.crypto.plus.provider.opensslffm;
+
+import com.ibm.crypto.plus.provider.base.NativeInterface;
+import com.ibm.crypto.plus.provider.openssl.OpenSSLException;
+import java.nio.ByteBuffer;
+import java.security.ProviderException;
+import sun.security.util.Debug;
+
+public abstract class NativeOpenSSLFFMAdapter implements NativeInterface {
+
+    // These code values must match those defined in Context.h.
+    //
+    private static final int VALUE_ID_FIPS_APPROVED_MODE = 0;
+    private static final int VALUE_OSSL_INSTALL_PATH = 1;
+    private static final int VALUE_OSSL_VERSION = 2;
+
+    // User enabled debugging
+    private static Debug debug = Debug.getInstance("jceplus");
+
+    static final String unobtainedValue = new String();
+
+    private boolean useFIPSMode;
+
+    private static final String minOpenSSLVersion = "3.5.0";
+
+    private String osslVersion = unobtainedValue;
+    private String osslInstallPath = unobtainedValue;
+
+    // The following is a special String instance to indicate that a
+    // value has not yet been obtained.  We do this because some values
+    // may be null and we only want to query the value one time.
+    //
+    private static String libraryBuildDate = unobtainedValue;
+
+    NativeOpenSSLFFMAdapter(boolean useFIPSMode) {
+        this.useFIPSMode = useFIPSMode;
+        initializeOpenSSL();
+    }
+
+    // Load libcrypto and validate it. Called once from the constructor; the
+    // adapter is a singleton, so no lazy or repeated initialization is needed.
+    //
+    private void initializeOpenSSL() {
+        try {
+            // Loads libcrypto and resolves its symbols. FIPS is not supported
+            // through the FFM backend.
+            StaticStub.initializeOSSL(this.useFIPSMode);
+            getLibraryBuildDate();
+            validateLibraryVersion();
+        } catch (OpenSSLException e) {
+            throw providerException("Failed to initialize OpenJCEPlus provider", e);
+        } catch (Throwable t) {
+            ProviderException exceptionToThrow = providerException(
+                    "Failed to initialize OpenJCEPlus provider", t);
+
+            if (exceptionToThrow.getCause() == null) {
+                // We are not including the full stack trace back to the point
+                // of origin.
+                // Try and obtain the message for the underlying cause of the
+                // exception
+                //
+                // If an ExceptionInInitializerError or NoClassDefFoundError is
+                // thrown, we want to get the message from the cause of that
+                // exception.
+                //
+                if ((t instanceof java.lang.ExceptionInInitializerError)
+                        || (t instanceof java.lang.NoClassDefFoundError)) {
+                    Throwable cause = t.getCause();
+                    if (cause != null) {
+                        t = cause;
+                    }
+                }
+
+                // In the case that the FFM library could not be loaded.
+                //
+                String message = t.getMessage();
+                if ((message != null) && (message.length() > 0)) {
+                    // We want to see the message for the underlying cause even
+                    // if not showing the stack trace all the way back to the
+                    // point of origin.
+                    //
+                    exceptionToThrow.initCause(new ProviderException(t.getMessage()));
+                }
+            }
+
+            if (debug != null) {
+                exceptionToThrow.printStackTrace(System.out);
+            }
+
+            throw exceptionToThrow;
+        }
+    }
+
+    @Override
+    public String getLibraryVersion() throws OpenSSLException {
+        if (osslVersion == unobtainedValue) {
+            obtainOpenSSLVersion();
+        }
+        return osslVersion;
+    }
+
+    @Override
+    public String getLibraryInstallPath() throws OpenSSLException {
+        if (osslInstallPath == unobtainedValue) {
+            obtainOpenSSLInstallPath();
+        }
+        return osslInstallPath;
+    }
+
+    private synchronized void obtainOpenSSLVersion() throws OpenSSLException {
+        // Leave this duplicate check in here. If two threads are both trying
+        // to get the value at the same time, we only want to call the native
+        // code one time.
+        //
+        if (osslVersion == unobtainedValue) {
+            osslVersion = CTX_getValue(VALUE_OSSL_VERSION);
+        }
+    }
+
+    private synchronized void obtainOpenSSLInstallPath() throws OpenSSLException {
+        // Leave this duplicate check in here. If two threads are both trying
+        // to get the value at the same time, we only want to call the native
+        // code one time.
+        //
+        if (osslInstallPath == unobtainedValue) {
+            osslInstallPath = CTX_getValue(VALUE_OSSL_INSTALL_PATH);
+        }
+    }
+
+    static public ProviderException providerException(String message, Throwable throwable) {
+        return new ProviderException(message, throwable);
+    }
+
+    @Override
+    public void validateLibraryLocation() throws ProviderException, OpenSSLException {
+        if (debug != null) {
+            debug.println("validateLibraryLocation: not applicable for FFM backend");
+        }
+    }
+
+    @Override
+    public void validateLibraryVersion() throws ProviderException, OpenSSLException {
+        String[] minimumVersion = getMinimumLibraryVersion().split("\\.");
+        String[] actualVersion = getLibraryVersion().split("\\.");
+
+        if (debug != null) {
+            debug.println("Minimum OpenSSL version : " + getMinimumLibraryVersion());
+            debug.println("Actual OpenSSL version : " + getLibraryVersion());
+        }
+
+        int majorExpected = Integer.parseInt(minimumVersion[0]);
+        int majorActual = Integer.parseInt(actualVersion[0]);
+        int minorExpected = Integer.parseInt(minimumVersion[1]);
+        int minorActual = Integer.parseInt(actualVersion[1]);
+        int patchExpected = Integer.parseInt(minimumVersion[2]);
+        int patchActual = Integer.parseInt(actualVersion[2]);
+
+        if (majorExpected > majorActual) {
+            throw new ProviderException("Expected OpenSSL library version greater than "
+                    + minimumVersion + ", got " + actualVersion);
+        } else if (majorExpected == majorActual) {
+            if (minorExpected > minorActual) {
+                throw new ProviderException("Expected OpenSSL library version greater than "
+                        + minimumVersion + ", got " + actualVersion);
+            } else if ((minorExpected == minorActual) && (patchExpected > patchActual)) {
+                throw new ProviderException("Expected OpenSSL library version greater than "
+                        + minimumVersion + ", got " + actualVersion);
+            }
+        }
+    }
+
+    private String getMinimumLibraryVersion() {
+        return minOpenSSLVersion;
+    }
+
+    @Override
+    public String getLibraryBuildDate() {
+        if (libraryBuildDate == unobtainedValue) {
+            libraryBuildDate = StaticStub.getLibraryBuildDate();
+        }
+        return libraryBuildDate;
+    }
+
+    @Override
+    public long initialize(boolean isFIPS) throws OpenSSLException {
+        return 0;
+    }
+
+    @Override
+    public String CTX_getValue(int valueId) throws OpenSSLException {
+        return StaticStub.CTX_getValue(valueId);
+    }
+
+    @Override
+    public long getByteBufferPointer(ByteBuffer b) {
+        throw new UnsupportedOperationException("getByteBufferPointer");
+    }
+
+    @Override
+    public void RAND_generateSeed(byte[] seed) throws OpenSSLException {
+        throw new UnsupportedOperationException("RAND_generateSeed");
+    }
+
+    @Override
+    public long EXTRAND_create(String algName) throws OpenSSLException {
+        throw new UnsupportedOperationException("EXTRAND_create");
+    }
+
+    @Override
+    public void EXTRAND_nextBytes(long PRNGContextId, byte[] buffer) throws OpenSSLException {
+        throw new UnsupportedOperationException("EXTRAND_nextBytes");
+    }
+
+    @Override
+    public void EXTRAND_setSeed(long PRNGContextId, byte[] seed) throws OpenSSLException {
+        throw new UnsupportedOperationException("EXTRAND_setSeed");
+    }
+
+    @Override
+    public void EXTRAND_delete(long PRNGContextId) throws OpenSSLException {
+        throw new UnsupportedOperationException("EXTRAND_delete");
+    }
+
+    @Override
+    public long CIPHER_create(String cipher) throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_create");
+    }
+
+    @Override
+    public void CIPHER_init(long cipherId, int isEncrypt, int paddingId, byte[] key, byte[] iv) throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_init");
+    }
+
+    @Override
+    public void CIPHER_clean(long cipherId) throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_clean");
+    }
+
+    @Override
+    public void CIPHER_setPadding(long cipherId, int paddingId) throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_setPadding");
+    }
+
+    @Override
+    public int CIPHER_getBlockSize(long cipherId) {
+        throw new UnsupportedOperationException("CIPHER_getBlockSize");
+    }
+
+    @Override
+    public int CIPHER_getKeyLength(long cipherId) {
+        throw new UnsupportedOperationException("CIPHER_getKeyLength");
+    }
+
+    @Override
+    public int CIPHER_getIVLength(long cipherId) {
+        throw new UnsupportedOperationException("CIPHER_getIVLength");
+    }
+
+    @Override
+    public int CIPHER_getOID(long cipherId) {
+        throw new UnsupportedOperationException("CIPHER_getOID");
+    }
+
+    @Override
+    public int CIPHER_encryptUpdate(long cipherId, byte[] plaintext, int plaintextOffset, int plaintextLen,
+            byte[] ciphertext, int ciphertextOffset, boolean needsReinit) throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_encryptUpdate");
+    }
+
+    @Override
+    public int CIPHER_decryptUpdate(long cipherId, byte[] ciphertext, int cipherOffset, int cipherLen,
+            byte[] plaintext, int plaintextOffset, boolean needsReinit) throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_decryptUpdate");
+    }
+
+    @Override
+    public int CIPHER_encryptFinal(long cipherId, byte[] input, int inOffset, int inLen, byte[] ciphertext,
+            int ciphertextOffset, boolean needsReinit) throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_encryptFinal");
+    }
+
+    @Override
+    public int CIPHER_decryptFinal(long cipherId, byte[] ciphertext, int cipherOffset, int cipherLen,
+            byte[] plaintext, int plaintextOffset, boolean needsReinit) throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_decryptFinal");
+    }
+
+    @Override
+    public long checkHardwareSupport() {
+        throw new UnsupportedOperationException("checkHardwareSupport");
+    }
+
+    @Override
+    public void CIPHER_delete(long cipherId) throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_delete");
+    }
+
+    @Override
+    public byte[] CIPHER_KeyWraporUnwrap(byte[] key, byte[] KEK, int type)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("CIPHER_KeyWraporUnwrap");
+    }
+
+    @Override
+    public int z_kmc_native(byte[] input, int inputOffset, byte[] output, int outputOffset, long paramPointer,
+            int inputLength, int mode) {
+        throw new UnsupportedOperationException("z_kmc_native");
+    }
+
+    @Override
+    public long POLY1305CIPHER_create(String cipher) throws OpenSSLException {
+        throw new UnsupportedOperationException("POLY1305CIPHER_create");
+    }
+
+    @Override
+    public void POLY1305CIPHER_init(long cipherId, int isEncrypt, byte[] key, byte[] iv) throws OpenSSLException {
+        throw new UnsupportedOperationException("POLY1305CIPHER_init");
+    }
+
+    @Override
+    public void POLY1305CIPHER_clean(long cipherId) throws OpenSSLException {
+        throw new UnsupportedOperationException("POLY1305CIPHER_clean");
+    }
+
+    @Override
+    public void POLY1305CIPHER_setPadding(long cipherId, int paddingId) throws OpenSSLException {
+        throw new UnsupportedOperationException("POLY1305CIPHER_setPadding");
+    }
+
+    @Override
+    public int POLY1305CIPHER_getBlockSize(long cipherId) {
+        throw new UnsupportedOperationException("POLY1305CIPHER_getBlockSize");
+    }
+
+    @Override
+    public int POLY1305CIPHER_getKeyLength(long cipherId) {
+        throw new UnsupportedOperationException("POLY1305CIPHER_getKeyLength");
+    }
+
+    @Override
+    public int POLY1305CIPHER_getIVLength(long cipherId) {
+        throw new UnsupportedOperationException("POLY1305CIPHER_getIVLength");
+    }
+
+    @Override
+    public int POLY1305CIPHER_getOID(long cipherId) {
+        throw new UnsupportedOperationException("POLY1305CIPHER_getOID");
+    }
+
+    @Override
+    public int POLY1305CIPHER_encryptUpdate(long cipherId, byte[] plaintext, int plaintextOffset, int plaintextLen,
+            byte[] ciphertext, int ciphertextOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("POLY1305CIPHER_encryptUpdate");
+    }
+
+    @Override
+    public int POLY1305CIPHER_decryptUpdate(long cipherId, byte[] ciphertext, int cipherOffset, int cipherLen,
+            byte[] plaintext, int plaintextOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("POLY1305CIPHER_decryptUpdate");
+    }
+
+    @Override
+    public int POLY1305CIPHER_encryptFinal(long cipherId, byte[] input, int inOffset, int inLen, byte[] ciphertext,
+            int ciphertextOffset, byte[] tag) throws OpenSSLException {
+        throw new UnsupportedOperationException("POLY1305CIPHER_encryptFinal");
+    }
+
+    @Override
+    public int POLY1305CIPHER_decryptFinal(long cipherId, byte[] ciphertext, int cipherOffset, int cipherLen,
+            byte[] plaintext, int plaintextOffset, byte[] tag) throws OpenSSLException {
+        throw new UnsupportedOperationException("POLY1305CIPHER_decryptFinal");
+    }
+
+    @Override
+    public void POLY1305CIPHER_delete(long cipherId) throws OpenSSLException {
+        throw new UnsupportedOperationException("POLY1305CIPHER_delete");
+    }
+
+    @Override
+    public long do_GCM_checkHardwareGCMSupport() {
+        throw new UnsupportedOperationException("do_GCM_checkHardwareGCMSupport");
+    }
+
+    @Override
+    public int do_GCM_encryptFastJNI_WithHardwareSupport(int keyLen, int ivLen, int inOffset, int inLen,
+            int ciphertextOffset, int aadLen, int tagLen, long parameterBuffer, byte[] input, int inputOffset,
+            byte[] output, int outputOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_encryptFastJNI_WithHardwareSupport");
+    }
+
+    @Override
+    public int do_GCM_encryptFastJNI(long gcmCtx, int keyLen, int ivLen, int inOffset, int inLen, int ciphertextOffset,
+            int aadLen, int tagLen, long parameterBuffer, long inputBuffer, long outputBuffer) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_encryptFastJNI");
+    }
+
+    @Override
+    public int do_GCM_decryptFastJNI_WithHardwareSupport(int keyLen, int ivLen, int inOffset, int inLen,
+            int ciphertextOffset, int aadLen, int tagLen, long parameterBuffer, byte[] input, int inputOffset,
+            byte[] output, int outputOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_decryptFastJNI_WithHardwareSupport");
+    }
+
+    @Override
+    public int do_GCM_decryptFastJNI(long gcmCtx, int keyLen, int ivLen, int ciphertextOffset, int ciphertextLen,
+            int plainOffset, int aadLen, int tagLen, long parameterBuffer, long inputBuffer, long outputBuffer)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_decryptFastJNI");
+    }
+
+    @Override
+    public int do_GCM_encrypt(long gcmCtx, byte[] key, int keyLen, byte[] iv, int ivLen, byte[] input, int inOffset,
+            int inLen, byte[] ciphertext, int ciphertextOffset, byte[] aad, int aadLen, byte[] tag, int tagLen)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_encrypt");
+    }
+
+    @Override
+    public int do_GCM_decrypt(long gcmCtx, byte[] key, int keyLen, byte[] iv, int ivLen, byte[] ciphertext,
+            int cipherOffset, int cipherLen, byte[] plaintext, int plaintextOffset, byte[] aad, int aadLen, int tagLen)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_decrypt");
+    }
+
+    @Override
+    public int do_GCM_FinalForUpdateEncrypt(long gcmCtx, byte[] key, int keyLen, byte[] iv, int ivLen, byte[] input,
+            int inOffset, int inLen, byte[] ciphertext, int ciphertextOffset, byte[] aad, int aadLen, byte[] tag,
+            int tagLen) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_FinalForUpdateEncrypt");
+    }
+
+    @Override
+    public int do_GCM_FinalForUpdateDecrypt(long gcmCtx, byte[] ciphertext, int cipherOffset, int cipherLen,
+            byte[] plaintext, int plaintextOffset, int plaintextlen, byte[] aad, int aadLen, int tagLen)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_FinalForUpdateDecrypt");
+    }
+
+    @Override
+    public int do_GCM_UpdForUpdateEncrypt(long gcmCtx, byte[] input, int inOffset, int inLen, byte[] ciphertext,
+            int ciphertextOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_UpdForUpdateEncrypt");
+    }
+
+    @Override
+    public int do_GCM_UpdForUpdateDecrypt(long gcmCtx, byte[] ciphertext, int cipherOffset, int cipherLen,
+            byte[] plaintext, int plaintextOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_UpdForUpdateDecrypt");
+    }
+
+    @Override
+    public int do_GCM_InitForUpdateEncrypt(long gcmCtx, byte[] key, int keyLen, byte[] iv, int ivLen, byte[] aad,
+            int aadLen) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_InitForUpdateEncrypt");
+    }
+
+    @Override
+    public int do_GCM_InitForUpdateDecrypt(long gcmCtx, byte[] key, int keyLen, byte[] iv, int ivLen, byte[] aad,
+            int aadLen) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_InitForUpdateDecrypt");
+    }
+
+    @Override
+    public void do_GCM_delete() throws OpenSSLException {
+        throw new UnsupportedOperationException("do_GCM_delete");
+    }
+
+    @Override
+    public void free_GCM_ctx(long gcmContextId) throws OpenSSLException {
+        throw new UnsupportedOperationException("free_GCM_ctx");
+    }
+
+    @Override
+    public long create_GCM_context() throws OpenSSLException {
+        throw new UnsupportedOperationException("create_GCM_context");
+    }
+
+    @Override
+    public long do_CCM_checkHardwareCCMSupport() {
+        throw new UnsupportedOperationException("do_CCM_checkHardwareCCMSupport");
+    }
+
+    @Override
+    public int do_CCM_encryptFastJNI_WithHardwareSupport(int keyLen, int ivLen, int inOffset, int inLen,
+            int ciphertextOffset, int aadLen, int tagLen, long parameterBuffer, byte[] input, int inputOffset,
+            byte[] output, int outputOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_CCM_encryptFastJNI_WithHardwareSupport");
+    }
+
+    @Override
+    public int do_CCM_encryptFastJNI(int keyLen, int ivLen, int inLen, int ciphertextLen, int aadLen, int tagLen,
+            long parameterBuffer, long inputBuffer, long outputBuffer) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_CCM_encryptFastJNI");
+    }
+
+    @Override
+    public int do_CCM_decryptFastJNI_WithHardwareSupport(int keyLen, int ivLen, int inOffset, int inLen,
+            int ciphertextOffset, int aadLen, int tagLen, long parameterBuffer, byte[] input, int inputOffset,
+            byte[] output, int outputOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_CCM_decryptFastJNI_WithHardwareSupport");
+    }
+
+    @Override
+    public int do_CCM_decryptFastJNI(int keyLen, int ivLen, int ciphertextLen, int plaintextLen, int aadLen, int tagLen,
+            long parameterBuffer, long inputBuffer, long outputBuffer) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_CCM_decryptFastJNI");
+    }
+
+    @Override
+    public int do_CCM_encrypt(byte[] iv, int ivLen, byte[] key, int keyLen, byte[] aad, int aadLen, byte[] input,
+            int inLen, byte[] ciphertext, int ciphertextLen, int tagLen) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_CCM_encrypt");
+    }
+
+    @Override
+    public int do_CCM_decrypt(byte[] iv, int ivLen, byte[] key, int keyLen, byte[] aad, int aadLen, byte[] ciphertext,
+            int ciphertextLength, byte[] plaintext, int plaintextLength, int tagLen) throws OpenSSLException {
+        throw new UnsupportedOperationException("do_CCM_decrypt");
+    }
+
+    @Override
+    public void do_CCM_delete() throws OpenSSLException {
+        throw new UnsupportedOperationException("do_CCM_delete");
+    }
+
+    @Override
+    public int RSACIPHER_public_encrypt(long rsaKeyId,
+            int rsaPaddingId, int mdId, int mgf1Id, byte[] plaintext, int plaintextOffset,
+            int plaintextLen, byte[] ciphertext, int ciphertextOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSACIPHER_public_encrypt");
+    }
+
+    @Override
+    public int RSACIPHER_private_encrypt(long rsaKeyId, int rsaPaddingId, byte[] plaintext, int plaintextOffset,
+            int plaintextLen, byte[] ciphertext, int ciphertextOffset, boolean convertKey) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSACIPHER_private_encrypt");
+    }
+
+    @Override
+    public int RSACIPHER_public_decrypt(long rsaKeyId, int rsaPaddingId, byte[] ciphertext, int ciphertextOffset,
+            int ciphertextLen, byte[] plaintext, int plaintextOffset) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSACIPHER_public_decrypt");
+    }
+
+    @Override
+    public int RSACIPHER_private_decrypt(long rsaKeyId,
+            int rsaPaddingId, int mdId, int mgf1Id, byte[] ciphertext, int ciphertextOffset,
+            int ciphertextLen, byte[] plaintext, int plaintextOffset, boolean convertKey)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("RSACIPHER_private_decrypt");
+    }
+
+    @Override
+    public long DHKEY_generate(int numBits) throws OpenSSLException {
+        throw new UnsupportedOperationException("DHKEY_generate");
+    }
+
+    @Override
+    public byte[] DHKEY_generateParameters(int numBits) {
+        throw new UnsupportedOperationException("DHKEY_generateParameters");
+    }
+
+    @Override
+    public long DHKEY_generate(byte[] dhParameters) throws OpenSSLException {
+        throw new UnsupportedOperationException("DHKEY_generate");
+    }
+
+    @Override
+    public long DHKEY_createPrivateKey(byte[] privateKeyBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("DHKEY_createPrivateKey");
+    }
+
+    @Override
+    public long DHKEY_createPublicKey(byte[] publicKeyBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("DHKEY_createPublicKey");
+    }
+
+    @Override
+    public byte[] DHKEY_getParameters(long dhKeyId) {
+        throw new UnsupportedOperationException("DHKEY_getParameters");
+    }
+
+    @Override
+    public byte[] DHKEY_getPrivateKeyBytes(long dhKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DHKEY_getPrivateKeyBytes");
+    }
+
+    @Override
+    public byte[] DHKEY_getPublicKeyBytes(long dhKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DHKEY_getPublicKeyBytes");
+    }
+
+    @Override
+    public long DHKEY_createPKey(long dhKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DHKEY_createPKey");
+    }
+
+    @Override
+    public byte[] DHKEY_computeDHSecret(long pubKeyId, long privKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DHKEY_computeDHSecret");
+    }
+
+    @Override
+    public void DHKEY_delete(long dhKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DHKEY_delete");
+    }
+
+    @Override
+    public long RSAKEY_generate(int numBits, long e) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAKEY_generate");
+    }
+
+    @Override
+    public long RSAKEY_createPrivateKey(byte[] privateKeyBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAKEY_createPrivateKey");
+    }
+
+    @Override
+    public long RSAKEY_createPublicKey(byte[] publicKeyBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAKEY_createPublicKey");
+    }
+
+    @Override
+    public byte[] RSAKEY_getPrivateKeyBytes(long rsaKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAKEY_getPrivateKeyBytes");
+    }
+
+    @Override
+    public byte[] RSAKEY_getPublicKeyBytes(long rsaKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAKEY_getPublicKeyBytes");
+    }
+
+    @Override
+    public int RSAKEY_size(long rsaKeyId) {
+        throw new UnsupportedOperationException("RSAKEY_size");
+    }
+
+    @Override
+    public void RSAKEY_delete(long rsaKeyId) {
+        throw new UnsupportedOperationException("RSAKEY_delete");
+    }
+
+    @Override
+    public long DSAKEY_generate(int numBits) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSAKEY_generate");
+    }
+
+    @Override
+    public byte[] DSAKEY_generateParameters(int numBits) {
+        throw new UnsupportedOperationException("DSAKEY_generateParameters");
+    }
+
+    @Override
+    public long DSAKEY_generate(byte[] dsaParameters) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSAKEY_generate");
+    }
+
+    @Override
+    public long DSAKEY_createPrivateKey(byte[] privateKeyBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSAKEY_createPrivateKey");
+    }
+
+    @Override
+    public long DSAKEY_createPublicKey(byte[] publicKeyBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSAKEY_createPublicKey");
+    }
+
+    @Override
+    public byte[] DSAKEY_getParameters(long dsaKeyId) {
+        throw new UnsupportedOperationException("DSAKEY_getParameters");
+    }
+
+    @Override
+    public byte[] DSAKEY_getPrivateKeyBytes(long dsaKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSAKEY_getPrivateKeyBytes");
+    }
+
+    @Override
+    public byte[] DSAKEY_getPublicKeyBytes(long dsaKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSAKEY_getPublicKeyBytes");
+    }
+
+    @Override
+    public long DSAKEY_createPKey(long dsaKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSAKEY_createPKey");
+    }
+
+    @Override
+    public void DSAKEY_delete(long dsaKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSAKEY_delete");
+    }
+
+    @Override
+    public void PKEY_delete(long pkeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("PKEY_delete");
+    }
+
+    @Override
+    public long DIGEST_create(String digestAlgo) throws OpenSSLException {
+        return Digest.DIGEST_create(digestAlgo);
+    }
+
+    @Override
+    public long DIGEST_copy(long digestId) throws OpenSSLException {
+        return Digest.DIGEST_copy(digestId);
+    }
+
+    @Override
+    public int DIGEST_update(long digestId, byte[] input, int offset, int length)
+            throws OpenSSLException {
+        return Digest.DIGEST_update(digestId, input, offset, length);
+    }
+
+    @Override
+    public void DIGEST_updateFastJNI(long digestId, long inputBuffer, int length)
+            throws OpenSSLException {
+        Digest.DIGEST_updateFastJNI(digestId, inputBuffer, length);
+    }
+
+    @Override
+    public byte[] DIGEST_digest(long digestId) throws OpenSSLException {
+        return Digest.DIGEST_digest(digestId);
+    }
+
+    @Override
+    public void DIGEST_digest_and_reset(long digestId, long outputBuffer, int length)
+            throws OpenSSLException {
+        Digest.DIGEST_digest_and_reset(digestId, outputBuffer, length);
+    }
+
+    @Override
+    public int DIGEST_digest_and_reset(long digestId, byte[] output) throws OpenSSLException {
+        return Digest.DIGEST_digest_and_reset(digestId, output);
+    }
+
+    @Override
+    public int DIGEST_size(long digestId) throws OpenSSLException {
+        return Digest.DIGEST_size(digestId);
+    }
+
+    @Override
+    public void DIGEST_reset(long digestId) throws OpenSSLException {
+        Digest.DIGEST_reset(digestId);
+    }
+
+    @Override
+    public void DIGEST_delete(long digestId) throws OpenSSLException {
+        Digest.DIGEST_delete(digestId);
+    }
+
+    @Override
+    public int DIGEST_PKCS12KeyDeriveHelp(long digestId, byte[] input,
+            int offset, int length, int iterationCount) throws OpenSSLException {
+        throw new UnsupportedOperationException("DIGEST_PKCS12KeyDeriveHelp");
+    }
+
+    @Override
+    public byte[] SIGNATURE_sign(long digestId, long pkeyId, boolean convert) throws OpenSSLException {
+        throw new UnsupportedOperationException("SIGNATURE_sign");
+    }
+
+    @Override
+    public boolean SIGNATURE_verify(long digestId, long pkeyId, byte[] sigBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("SIGNATURE_verify");
+    }
+
+    @Override
+    public byte[] SIGNATUREEdDSA_signOneShot(long pkeyId, byte[] bytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("SIGNATUREEdDSA_signOneShot");
+    }
+
+    @Override
+    public boolean SIGNATUREEdDSA_verifyOneShot(long pkeyId, byte[] sigBytes, byte[] oneShot) throws OpenSSLException {
+        throw new UnsupportedOperationException("SIGNATUREEdDSA_verifyOneShot");
+    }
+
+    @Override
+    public int RSAPSS_signInit(long rsaPssId, long pkeyId, int saltlen, boolean convert) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAPSS_signInit");
+    }
+
+    @Override
+    public int RSAPSS_verifyInit(long rsaPssId, long pkeyId, int saltlen) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAPSS_verifyInit");
+    }
+
+    @Override
+    public int RSAPSS_getSigLen(long rsaPssId) {
+        throw new UnsupportedOperationException("RSAPSS_getSigLen");
+    }
+
+    @Override
+    public void RSAPSS_signFinal(long rsaPssId, byte[] signature, int length) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAPSS_signFinal");
+    }
+
+    @Override
+    public boolean RSAPSS_verifyFinal(long rsaPssId, byte[] sigBytes, int length) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAPSS_verifyFinal");
+    }
+
+    @Override
+    public long RSAPSS_createContext(String digestAlgo, String mgf1SpecAlgo) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAPSS_createContext");
+    }
+
+    @Override
+    public void RSAPSS_releaseContext(long rsaPssId) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAPSS_releaseContext");
+    }
+
+    @Override
+    public void RSAPSS_digestUpdate(long rsaPssId, byte[] input, int offset, int length) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAPSS_digestUpdate");
+    }
+
+    @Override
+    public void RSAPSS_reset(long digestId) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAPSS_reset");
+    }
+
+    @Override
+    public void RSAPSS_resetDigest(long rsaPssId) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSAPSS_resetDigest");
+    }
+
+    @Override
+    public byte[] DSANONE_SIGNATURE_sign(byte[] digest, long dsaKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSANONE_SIGNATURE_sign");
+    }
+
+    @Override
+    public boolean DSANONE_SIGNATURE_verify(byte[] digest, long dsaKeyId, byte[] sigBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("DSANONE_SIGNATURE_verify");
+    }
+
+    @Override
+    public byte[] RSASSL_SIGNATURE_sign(byte[] digest, long rsaKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("RSASSL_SIGNATURE_sign");
+    }
+
+    @Override
+    public boolean RSASSL_SIGNATURE_verify(byte[] digest, long rsaKeyId, byte[] sigBytes, boolean convert)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("RSASSL_SIGNATURE_verify");
+    }
+
+    @Override
+    public long HMAC_create(String digestAlgo) throws OpenSSLException {
+        throw new UnsupportedOperationException("HMAC_create");
+    }
+
+    @Override
+    public int HMAC_update(long hmacId, byte[] key, int keyLength, byte[] input, int inputOffset, int inputLength,
+            boolean needInit) throws OpenSSLException {
+        throw new UnsupportedOperationException("HMAC_update");
+    }
+
+    @Override
+    public int HMAC_doFinal(long hmacId, byte[] key, int keyLength, byte[] hmac, boolean needInit) throws OpenSSLException {
+        throw new UnsupportedOperationException("HMAC_doFinal");
+    }
+
+    @Override
+    public int HMAC_size(long hmacId) throws OpenSSLException {
+        throw new UnsupportedOperationException("HMAC_size");
+    }
+
+    @Override
+    public void HMAC_delete(long hmacId) throws OpenSSLException {
+        throw new UnsupportedOperationException("HMAC_delete");
+    }
+
+    @Override
+    public long ECKEY_generate(int numBits) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_generate");
+    }
+
+    @Override
+    public long ECKEY_generate(String curveOid) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_generate");
+    }
+
+    @Override
+    public long XECKEY_generate(int option, long bufferPtr) throws OpenSSLException {
+        throw new UnsupportedOperationException("XECKEY_generate");
+    }
+
+    @Override
+    public byte[] ECKEY_generateParameters(int numBits) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_generateParameters");
+    }
+
+    @Override
+    public byte[] ECKEY_generateParameters(String curveOid) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_generateParameters");
+    }
+
+    @Override
+    public long ECKEY_generate(byte[] ecParameters) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_generate");
+    }
+
+    @Override
+    public long ECKEY_createPrivateKey(byte[] privateKeyBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_createPrivateKey");
+    }
+
+    @Override
+    public long XECKEY_createPrivateKey(byte[] privateKeyBytes, long bufferPtr) throws OpenSSLException {
+        throw new UnsupportedOperationException("XECKEY_createPrivateKey");
+    }
+
+    @Override
+    public long ECKEY_createPublicKey(byte[] publicKeyBytes, byte[] parameterBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_createPublicKey");
+    }
+
+    @Override
+    public long XECKEY_createPublicKey(byte[] publicKeyBytes) throws OpenSSLException {
+        throw new UnsupportedOperationException("XECKEY_createPublicKey");
+    }
+
+    @Override
+    public byte[] ECKEY_getParameters(long ecKeyId) {
+        throw new UnsupportedOperationException("ECKEY_getParameters");
+    }
+
+    @Override
+    public byte[] ECKEY_getPrivateKeyBytes(long ecKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_getPrivateKeyBytes");
+    }
+
+    @Override
+    public byte[] XECKEY_getPrivateKeyBytes(long xecKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("XECKEY_getPrivateKeyBytes");
+    }
+
+    @Override
+    public byte[] ECKEY_getPublicKeyBytes(long ecKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_getPublicKeyBytes");
+    }
+
+    @Override
+    public byte[] XECKEY_getPublicKeyBytes(long xecKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("XECKEY_getPublicKeyBytes");
+    }
+
+    @Override
+    public long ECKEY_createPKey(long ecKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_createPKey");
+    }
+
+    @Override
+    public void ECKEY_delete(long ecKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_delete");
+    }
+
+    @Override
+    public void XECKEY_delete(long xecKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("XECKEY_delete");
+    }
+
+    @Override
+    public long XDHKeyAgreement_init(long privId) {
+        throw new UnsupportedOperationException("XDHKeyAgreement_init");
+    }
+
+    @Override
+    public void XDHKeyAgreement_setPeer(long genCtx, long pubId) {
+        throw new UnsupportedOperationException("XDHKeyAgreement_setPeer");
+    }
+
+    @Override
+    public byte[] ECKEY_computeECDHSecret(long pubEcKeyId, long privEcKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_computeECDHSecret");
+    }
+
+    @Override
+    public byte[] XECKEY_computeECDHSecret(long genCtx, long pubEcKeyId, long privEcKeyId)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("XECKEY_computeECDHSecret");
+    }
+
+    @Override
+    public byte[] ECKEY_signDatawithECDSA(byte[] digestBytes, int digestBytesLen, long ecPrivateKeyId)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_signDatawithECDSA");
+    }
+
+    @Override
+    public boolean ECKEY_verifyDatawithECDSA(byte[] digestBytes, int digestBytesLen, byte[] sigBytes, int sigBytesLen,
+            long ecPublicKeyId) throws OpenSSLException {
+        throw new UnsupportedOperationException("ECKEY_verifyDatawithECDSA");
+    }
+
+    @Override
+    public long HKDF_create(String digestAlgo) throws OpenSSLException {
+        throw new UnsupportedOperationException("HKDF_create");
+    }
+
+    @Override
+    public byte[] HKDF_extract(long hkdfId, byte[] saltBytes, long saltLen, byte[] inKey, long inKeyLen)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("HKDF_extract");
+    }
+
+    @Override
+    public byte[] HKDF_expand(long hkdfId, byte[] prkBytes, long prkBytesLen, byte[] info, long infoLen, long okmLen)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("HKDF_expand");
+    }
+
+    @Override
+    public byte[] HKDF_derive(long hkdfId, byte[] saltBytes, long saltLen, byte[] inKey, long inKeyLen, byte[] info,
+            long infoLen, long okmLen) throws OpenSSLException {
+        throw new UnsupportedOperationException("HKDF_derive");
+    }
+
+    @Override
+    public void HKDF_delete(long hkdfId) throws OpenSSLException {
+        throw new UnsupportedOperationException("HKDF_delete");
+    }
+
+    @Override
+    public int HKDF_size(long hkdfId) throws OpenSSLException {
+        throw new UnsupportedOperationException("HKDF_size");
+    }
+
+    @Override
+    public byte[] PBKDF2_derive(String hashAlgorithm, byte[] password, byte[] salt, int iterations, int keyLength)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("PBKDF2_derive");
+    }
+
+    @Override
+    public long MLKEY_generate(String cipherName)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("MLKEY_generate");
+    }
+
+    @Override
+    public long MLKEY_createPrivateKey(String cipherName, byte[] privateKeyBytes)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("MLKEY_createPrivateKey");
+    }
+
+    @Override
+    public long MLKEY_createPublicKey(String cipherName, byte[] publicKeyBytes)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("MLKEY_createPublicKey");
+    }
+
+    @Override
+    public byte[] MLKEY_getPrivateKeyBytes(long mlkeyId)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("MLKEY_getPrivateKeyBytes");
+    }
+
+    @Override
+    public byte[] MLKEY_getPublicKeyBytes(long mlkeyId)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("MLKEY_getPublicKeyBytes");
+    }
+
+    @Override
+    public void MLKEY_delete(long mlkeyId) {
+        throw new UnsupportedOperationException("MLKEY_delete");
+    }
+
+    @Override
+    public void KEM_encapsulate(long pKeyId, byte[] wrappedKey, byte[] randomKey)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("KEM_encapsulate");
+    }
+
+    @Override
+    public byte[] KEM_decapsulate(long pKeyId, byte[] wrappedKey)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("KEM_decapsulate");
+    }
+
+    @Override
+    public byte[] PQC_SIGNATURE_sign(long pKeyId, byte[] data)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("PQC_SIGNATURE_sign");
+    }
+
+    @Override
+    public boolean PQC_SIGNATURE_verify(long pKeyId, byte[] sigBytes, byte[] data)
+            throws OpenSSLException {
+        throw new UnsupportedOperationException("PQC_SIGNATURE_verify");
+    }
+}
