@@ -29,6 +29,7 @@ import groovy.transform.Field;
 @Field boolean PROVIDER_OPENJCEPLUS
 @Field boolean PROVIDER_OPENJCEPLUS_OCK
 @Field boolean PROVIDER_OPENJCEPLUS_OPENSSL
+@Field boolean PROVIDER_OPENJCEPLUS_OPENSSL_FFM
 @Field boolean PROVIDER_OPENJCEPLUSFIPS
 @Field boolean PROVIDER_SUN
 @Field ADDITIONAL_NODE_LABELS
@@ -243,6 +244,9 @@ def run(platform) {
                     if (PROVIDER_OPENJCEPLUS_OPENSSL == "true") {
                         allowedProviders.add("OpenJCEPlus-OpenSSL")
                     }
+                    if (PROVIDER_OPENJCEPLUS_OPENSSL_FFM == "true") {
+                        allowedProviders.add("OpenJCEPlus-OpenSSL-FFM")
+                    }
                     if (PROVIDER_OPENJCEPLUSFIPS == "true") {
                         allowedProviders.add("OpenJCEPlusFIPS")
                     }
@@ -423,6 +427,8 @@ pipeline {
             Run benchmarks with OpenJCEPlus-OCK provider')
         booleanParam(name: 'OpenJCEPlus_OpenSSL', defaultValue: true, description: '\
             Run benchmarks with OpenJCEPlus-OpenSSL provider')
+        booleanParam(name: 'OpenJCEPlus_OpenSSL_FFM', defaultValue: false, description: '\
+            Run benchmarks with OpenJCEPlus-OpenSSL-FFM provider (requires Java 22 or later)')
         booleanParam(name: 'OpenJCEPlusFIPS', defaultValue: false, description: '\
             Run benchmarks with OpenJCEPlusFIPS provider')
         booleanParam(name: 'Sun', defaultValue: true, description: '\
@@ -490,6 +496,7 @@ pipeline {
                         PROVIDER_OPENJCEPLUS="${params.OpenJCEPlus}"
                         PROVIDER_OPENJCEPLUS_OCK="${params.OpenJCEPlus_OCK}"
                         PROVIDER_OPENJCEPLUS_OPENSSL="${params.OpenJCEPlus_OpenSSL}"
+                        PROVIDER_OPENJCEPLUS_OPENSSL_FFM="${params.OpenJCEPlus_OpenSSL_FFM}"
                         PROVIDER_OPENJCEPLUSFIPS="${params.OpenJCEPlusFIPS}"
                         PROVIDER_SUN="${params.Sun}"
                         ADDITIONAL_NODE_LABELS="${params.ADDITIONAL_NODE_LABELS}"

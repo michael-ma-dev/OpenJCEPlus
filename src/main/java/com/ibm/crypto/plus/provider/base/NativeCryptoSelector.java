@@ -13,6 +13,7 @@ import com.ibm.crypto.plus.provider.SystemAccessUtils;
 import com.ibm.crypto.plus.provider.ock.NativeOCKAdapterFIPS;
 import com.ibm.crypto.plus.provider.ock.NativeOCKAdapterNonFIPS;
 import com.ibm.crypto.plus.provider.openssl.NativeOpenSSLAdapterNonFIPS;
+import com.ibm.crypto.plus.provider.opensslffm.NativeOpenSSLFFMAdapterNonFIPS;
 import java.security.Provider;
 import java.security.ProviderException;
 import sun.security.util.Debug;
@@ -35,7 +36,8 @@ public class NativeCryptoSelector {
      */
     public enum Backend {
         OCK,
-        OPENSSL
+        OPENSSL,
+        OPENSSL_FFM
     }
 
     static final String DEBUG_VALUE = "jceplus";
@@ -45,8 +47,10 @@ public class NativeCryptoSelector {
     // Backend implementation instances (will be set by concrete implementations)
     private static volatile NativeInterface ockBackend = null;
     private static volatile NativeInterface opensslBackend = null;
+    private static volatile NativeInterface opensslFFMBackend = null;
     private static volatile NativeInterface ockBackendFIPS = null;
     private static volatile NativeInterface opensslBackendFIPS = null;
+    private static volatile NativeInterface opensslFFMBackendFIPS = null;
 
     /**
      * Gets the backend implementation for the specified backend type.
@@ -72,6 +76,12 @@ public class NativeCryptoSelector {
                 throw new ProviderException("FIPS not supported through OpenSSL.");
             } else {
                 return NativeOpenSSLAdapterNonFIPS.getInstance();
+            }
+        } else if (backend == Backend.OPENSSL_FFM) {
+            if (isFIPS) {
+                throw new ProviderException("FIPS not supported through OpenSSL FFM.");
+            } else {
+                return NativeOpenSSLFFMAdapterNonFIPS.getInstance();
             }
         }
         return null;
@@ -138,10 +148,22 @@ public class NativeCryptoSelector {
                         "Remove the NativeProvider=OPENSSL attribute or use the OCK backend instead.");
                 }
                 return Backend.OPENSSL;
+            case "OPENSSL_FFM":
+                if (osName.contains("z/OS")) {
+                    throw new ConfigurationException(
+                        "OpenSSL FFM backend is not supported on z/OS. " +
+                        "Remove the NativeProvider=OPENSSL_FFM attribute or use the OCK backend instead.");
+                }
+                if (Runtime.version().feature() < 22) {
+                    throw new ConfigurationException(
+                        "OpenSSL FFM backend requires Java 22 or later. " +
+                        "Current version: " + Runtime.version());
+                }
+                return Backend.OPENSSL_FFM;
             case "OCK":
                 return Backend.OCK;
             default:
-                // If not OCK or OpenSSL throw an exception
+                // If not OCK, OpenSSL, or OPENSSL_FFM throw an exception
                 throw new ConfigurationException("Native backend unknown - " + nativeProviderValue);
         }
 

@@ -61,6 +61,9 @@ abstract public class BaseTest {
             case OpenJCEPlus_OpenSSL:
                 loadProvider(TestProvider.OpenJCEPlus_OpenSSL);
                 break;
+            case OpenJCEPlus_OpenSSL_FFM:
+                loadProvider(TestProvider.OpenJCEPlus_OpenSSL_FFM);
+                break;
             case OpenJCEPlus_OCK:
                 loadProvider(TestProvider.OpenJCEPlus_OCK);
                 break;
@@ -80,6 +83,7 @@ abstract public class BaseTest {
         if (provider == null) {
             if (testProvider == TestProvider.OpenJCEPlus
                     || testProvider == TestProvider.OpenJCEPlus_OpenSSL
+                    || testProvider == TestProvider.OpenJCEPlus_OpenSSL_FFM
                     || testProvider == TestProvider.OpenJCEPlus_OCK) {
                 provider = new OpenJCEPlus();
                 if (providerConfigFile != null) {
