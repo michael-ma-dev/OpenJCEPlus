@@ -17,6 +17,7 @@ import org.junit.jupiter.params.ParameterizedClass;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag(Tags.OPENJCEPLUS_OPENSSL_NAME)
+@Tag(Tags.OPENJCEPLUS_OPENSSL_FFM_NAME)
 @Tag(Tags.OPENJCEPLUS_OCK_NAME)
 @Tag(Tags.OPENJCEPLUS_FIPS_NAME)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

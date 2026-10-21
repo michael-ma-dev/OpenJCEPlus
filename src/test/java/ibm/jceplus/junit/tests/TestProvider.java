@@ -19,6 +19,7 @@ public enum TestProvider {
     SunEC("SunEC", null, null),
     OpenJCEPlus("OpenJCEPlus", "com.ibm.crypto.plus.provider.OpenJCEPlus", null),
     OpenJCEPlus_OpenSSL("OpenJCEPlus-OpenSSL", "com.ibm.crypto.plus.provider.OpenJCEPlus", "./src/test/OpenSSLOnly.config"),
+    OpenJCEPlus_OpenSSL_FFM("OpenJCEPlus-OpenSSL-FFM", "com.ibm.crypto.plus.provider.OpenJCEPlus", "./src/test/OpenSSLFFMOnly.config"),
     OpenJCEPlus_OCK("OpenJCEPlus-OCK", "com.ibm.crypto.plus.provider.OpenJCEPlus", "./src/test/OCKOnly.config"),
     OpenJCEPlusFIPS("OpenJCEPlusFIPS", "com.ibm.crypto.plus.provider.OpenJCEPlusFIPS", null);
 
@@ -31,6 +32,7 @@ public enum TestProvider {
     public static final String SUNEC_NAME = "SunEC";
     public static final String OPENJCEPLUS_NAME = "OpenJCEPlus";
     public static final String OPENJCEPLUS_OPENSSL_NAME = "OpenJCEPlus_OpenSSL";
+    public static final String OPENJCEPLUS_OPENSSL_FFM_NAME = "OpenJCEPlus_OpenSSL_FFM";
     public static final String OPENJCEPLUS_OCK_NAME = "OpenJCEPlus_OCK";
     public static final String OPENJCEPLUS_FIPS_NAME = "OpenJCEPlusFIPS";
 
