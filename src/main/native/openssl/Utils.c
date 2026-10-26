@@ -14,6 +14,9 @@
 
 #include "Utils.h"
 #include <string.h>
+#ifdef __MVS__
+#include <unistd.h>
+#endif
 
 int debug = 0;  // FIXME
 

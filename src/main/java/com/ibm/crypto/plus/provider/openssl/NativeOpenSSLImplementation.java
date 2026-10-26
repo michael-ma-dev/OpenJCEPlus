@@ -64,6 +64,12 @@ final class NativeOpenSSLImplementation extends NativeImplementation {
         osName = System.getProperty("os.name");
         osArch = System.getProperty("os.arch");
 
+        // On z/OS, libcrypto is statically linked into libopenjceplus.so at
+        // build time.  No separate shared object exists to pre-load.
+        if (osName.contains("z/OS")) {
+            return null;
+        }
+
         File loadFile = null;
 
         String osslPath = System.getProperty("openssl.library.path");
@@ -161,6 +167,10 @@ final class NativeOpenSSLImplementation extends NativeImplementation {
     static void preloadOpenSSL() {
 
         File loadFile = getOSSLLoadFile();
+        if (loadFile == null) {
+            // Static-link platform (z/OS): crypto is embedded in the bridge .so.
+            return;
+        }
         boolean osslLibraryPreloaded = loadIfExists(loadFile);
         if ((osslLibraryPreloaded == false) && requirePreloadOSSL) {
             throw new ProviderException("Could not load dependent openssl library for os.name=" + osName

@@ -9,7 +9,6 @@
 package com.ibm.crypto.plus.provider.base;
 
 import com.ibm.crypto.plus.provider.OpenJCEPlusProvider;
-import com.ibm.crypto.plus.provider.SystemAccessUtils;
 import com.ibm.crypto.plus.provider.ock.NativeOCKAdapterFIPS;
 import com.ibm.crypto.plus.provider.ock.NativeOCKAdapterNonFIPS;
 import com.ibm.crypto.plus.provider.openssl.NativeOpenSSLAdapterNonFIPS;
@@ -40,8 +39,6 @@ public class NativeCryptoSelector {
 
     static final String DEBUG_VALUE = "jceplus";
     protected static final Debug debug = Debug.getInstance(DEBUG_VALUE);
-    private static final String osName = SystemAccessUtils.getSystemProperty("os.name", "");
-
     // Backend implementation instances (will be set by concrete implementations)
     private static volatile NativeInterface ockBackend = null;
     private static volatile NativeInterface opensslBackend = null;
@@ -132,11 +129,6 @@ public class NativeCryptoSelector {
 
         switch (normalized) {
             case "OPENSSL":
-                if (osName.contains("z/OS")) {
-                    throw new ConfigurationException(
-                        "OpenSSL backend is not supported on z/OS. " +
-                        "Remove the NativeProvider=OPENSSL attribute or use the OCK backend instead.");
-                }
                 return Backend.OPENSSL;
             case "OCK":
                 return Backend.OCK;

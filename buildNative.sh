@@ -71,6 +71,12 @@ if [ -n "$OPENSSL_HOME" ];
   then
   cd ../openssl
 
-  make -f openjceplus.mak clean
-  make -f openjceplus.mak
+  if [ "${PLATFORM}" = "s390-zos64" ]; then
+    # z/OS: statically absorb libcrypto.a into the JNI bridge .so
+    make -f openjceplus.zos.mak clean
+    make -f openjceplus.zos.mak
+  else
+    make -f openjceplus.mak clean
+    make -f openjceplus.mak
+  fi
 fi

@@ -47,7 +47,10 @@ else ifeq (${PLATFORM},s390-zos64)
   CFLAGS+= -O3
   CFLAGS+= -fvisibility=default
   CFLAGS+= -fstack-protector-strong
-  LDFLAGS= -Wl,-bAMODE=64
+  # Enable POSIX thread types (pthread_once_t, pthread_key_t, pthread_t)
+  # required by OpenSSL headers on z/OS.
+  CFLAGS+= -D_OPEN_THREADS
+  LDFLAGS= -Wl,-bAMODE=64 -shared
   OSINCLUDEDIR=zos
 else ifeq (${PLATFORM},x86-linux64)
   PLAT=xa
