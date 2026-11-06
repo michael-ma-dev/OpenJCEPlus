@@ -1,3 +1,4 @@
 # encode selected files as ASCII or EBCDIC
 buildNative.sh  		 git-encoding=utf-8 zos-working-tree-encoding=ibm-1047
 checkstyle.xml           git-encoding=utf-8 zos-working-tree-encoding=utf-8
+*.mak                    git-encoding=utf-8 zos-working-tree-encoding=iso8859-1

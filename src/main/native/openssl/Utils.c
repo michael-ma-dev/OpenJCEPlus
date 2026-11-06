@@ -11,6 +11,9 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <openssl/err.h>
+#ifdef __MVS__
+#include <unistd.h>
+#endif
 
 #include "Utils.h"
 #include <string.h>

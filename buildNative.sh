@@ -26,12 +26,8 @@ fi
 
 if [ -z "$OPENSSL_HOME" ];
   then
-  if [ ${PLATFORM} != "s390-zos64" ];
-    then
-    echo "Error: OPENSSL_HOME is not defined or is empty";
-    exit;
-  fi
-  echo "Warning: OPENSSL_HOME is not defined or is empty; skipping OpenSSL native build";
+  echo "Error: OPENSSL_HOME is not defined or is empty";
+  exit;
 fi
 
 if [ -z "$PLATFORM" ];

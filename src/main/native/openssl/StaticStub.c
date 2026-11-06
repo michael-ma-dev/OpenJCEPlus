@@ -74,7 +74,13 @@ Java_com_ibm_crypto_plus_provider_openssl_NativeOpenSSLImplementation_CTX_1getVa
             return NULL;
     }
 
+#ifdef __MVS__
+#pragma convert("ISO8859-1")
+#endif
     if ((NULL == result) || (strcmp(result, "not available") == 0)) {
+#ifdef __MVS__
+#pragma convert(pop)
+#endif
         throwOSSLException(env, 0, "OPENSSL_info or OpenSSL_version failed");
         return NULL;
     }
