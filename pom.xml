@@ -65,6 +65,7 @@
               <build.native.file>${basedir}/buildNative.sh</build.native.file>
               <build.platform.value>s390-zos64</build.platform.value>
               <build.target.jgskitlib.dir>${project.basedir}/target/jgskit-mz-64/</build.target.jgskitlib.dir>
+              <build.target.ojplib.dir>${project.basedir}/target/ojp-mz-64/</build.target.ojplib.dir>
               <skip.native.compile>true</skip.native.compile>
             </properties>
             <build>
@@ -84,6 +85,10 @@
                         <target>
                           <mkdir dir="${project.basedir}/src/main/native/ock"/>
                           <echo file="${project.basedir}/src/main/native/ock/closed_Utils_c.h" append="false" encoding="IBM-1047">
+                            // This file is required for compiling with OpenXL. The actual file will get copied during a z/OS JDK build.
+                          </echo>
+                          <mkdir dir="${project.basedir}/src/main/native/openssl"/>
+                          <echo file="${project.basedir}/src/main/native/openssl/closed_Utils_c.h" append="false" encoding="IBM-1047">
                             // This file is required for compiling with OpenXL. The actual file will get copied during a z/OS JDK build.
                           </echo>
                         </target>
