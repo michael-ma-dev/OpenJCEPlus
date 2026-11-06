@@ -91,7 +91,13 @@ JNIEXPORT jlong JNICALL Java_com_ibm_crypto_plus_provider_openssl_NativeOpenSSLI
 {
     const char   *algNameChars  = NULL;
     const char   *digestName    = NULL;
+#ifdef __MVS__
+#pragma convert("ISO8859-1")
+#endif
     const char   *opensslAlg    = "HASH-DRBG";
+#ifdef __MVS__
+#pragma convert(pop)
+#endif
     EVP_RAND     *rand          = NULL;
     EVP_RAND_CTX *ctx           = NULL;
     OSSL_PARAM    params[2];
@@ -120,11 +126,17 @@ JNIEXPORT jlong JNICALL Java_com_ibm_crypto_plus_provider_openssl_NativeOpenSSLI
      * OpenSSL's HASH-DRBG "digest" parameter must be an EVP_MD name;
      * "SHA-256"/"SHA-512" are the canonical aliases recognised by OpenSSL 3.x.
      * Any other name is rejected so a weak digest can never be selected. */
+#ifdef __MVS__
+#pragma convert("ISO8859-1")
+#endif
     if (strcmp(algNameChars, "SHA256") == 0) {
         digestName = "SHA-256";
     } else if (strcmp(algNameChars, "SHA512") == 0) {
         digestName = "SHA-512";
     } else {
+#ifdef __MVS__
+#pragma convert(pop)
+#endif
         snprintf(errMsg, sizeof(errMsg), "Unsupported DRBG algorithm: %s",
                  algNameChars);
         throwOSSLException(env, 0, errMsg);
@@ -136,7 +148,7 @@ JNIEXPORT jlong JNICALL Java_com_ibm_crypto_plus_provider_openssl_NativeOpenSSLI
         err = ERR_get_error();
         ERR_error_string_n(err, errMsg, sizeof(errMsg));
         snprintf(fullMsg, sizeof(fullMsg),
-                 "Failed to fetch DRBG algorithm %s: %s", opensslAlg, errMsg);
+                 "Failed to fetch DRBG algorithm HASH-DRBG: %s", errMsg);
         throwOSSLException(env, 0, fullMsg);
         goto cleanup;
     }
@@ -158,7 +170,13 @@ JNIEXPORT jlong JNICALL Java_com_ibm_crypto_plus_provider_openssl_NativeOpenSSLI
      * Per OpenSSL 3 EVP_RAND design, instantiation params (including the
      * digest selection) must be passed to EVP_RAND_instantiate, not set
      * via a separate EVP_RAND_CTX_set_params call on an uninstantiated ctx. */
+#ifdef __MVS__
+#pragma convert("ISO8859-1")
+#endif
     params[0] = OSSL_PARAM_construct_utf8_string("digest", (char *)digestName, 0);
+#ifdef __MVS__
+#pragma convert(pop)
+#endif
     params[1] = OSSL_PARAM_construct_end();
 
     if (!EVP_RAND_instantiate(ctx, DRBG_STRENGTH, 0, NULL, 0, params)) {

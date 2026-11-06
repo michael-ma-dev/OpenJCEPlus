@@ -44,6 +44,8 @@ endif
 TARGET = ${HOSTOUT}/libopenjceplus.so
 ifeq (${PLATFORM},ppc-aix64)
 	TARGET_LIBS := ${OPENSSL_LIB_LOCATION}/libcrypto64.so.${OPENSSL_LIB_VERSION}
+else ifeq (${PLATFORM},s390-zos64)
+	TARGET_LIBS := ${OPENSSL_LIB_LOCATION}/libcrypto.x
 else
 	TARGET_LIBS := -L ${OPENSSL_LIB_LOCATION} -l ${OPENSSL_LIB}
 endif
